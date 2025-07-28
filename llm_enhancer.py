@@ -245,20 +245,24 @@ class LLMEnhancer:
             Formatted prompt for LLM
         """
         return f"""
-Please enhance and correct the following OCR text from a {context}. 
+You are an expert OCR text enhancer. Your task is to improve the readability of OCR text while preserving the EXACT original structure and content.
 
-Raw OCR text:
+RAW OCR TEXT:
 {raw_text}
 
-Please:
-1. Fix spelling and grammar errors
-2. Correct OCR misinterpretations (e.g., "0" vs "O", "1" vs "l")
-3. Improve formatting and readability
-4. Preserve the original structure and meaning
-5. Maintain proper paragraph breaks
-6. Fix common OCR issues like broken words, missing spaces, etc.
+ENHANCEMENT RULES:
+1. Fix ONLY obvious OCR errors (0/O, 1/l, 5/S, etc.)
+2. Correct spacing issues (missing spaces, extra spaces)
+3. Fix basic punctuation errors
+4. Preserve ALL original line breaks and formatting
+5. Keep ALL original text - do not add or remove content
+6. Maintain exact document structure
+7. Preserve ALL bullet points, numbering, and indentation
+8. Keep ALL email addresses, URLs, and technical terms exactly as they appear
+9. Do NOT change any names, dates, or specific details
+10. Do NOT add explanations or markdown formatting
 
-Return only the enhanced text without any explanations or markdown formatting.
+Return ONLY the enhanced text with the exact same structure as the original.
 """
     
     def extract_structured_data(self, text: str, data_type: str = "general") -> Dict[str, Any]:

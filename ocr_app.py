@@ -18,8 +18,8 @@ from llm_enhancer import LLMEnhancer
 class OCRProcessor:
     def __init__(self, use_llm: bool = True):
         """Initialize the OCR processor with Tesseract configuration."""
-        # Configure Tesseract for better OCR results
-        self.custom_config = r'--oem 3 --psm 6'
+        # Configure Tesseract for better OCR results with multiple PSM modes
+        self.custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?@#$%&*()[]{}:;"\'<>/|\\+=_-~` '
         
         # Initialize LLM enhancer if requested
         self.use_llm = use_llm
@@ -54,12 +54,16 @@ class OCRProcessor:
         # Apply noise reduction
         denoised = cv2.fastNlMeansDenoising(gray)
         
-        # Apply thresholding to get binary image
-        _, binary = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # Apply adaptive thresholding for better text separation
+        binary = cv2.adaptiveThreshold(denoised, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
         
         # Apply morphological operations to clean up the image
         kernel = np.ones((1, 1), np.uint8)
         cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+        
+        # Additional cleaning to preserve text structure
+        kernel_vertical = np.ones((2, 1), np.uint8)
+        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel_vertical)
         
         return cleaned
     
@@ -160,8 +164,8 @@ class OCRProcessor:
                 # Preprocess the image
                 processed_image = self.preprocess_image(image)
                 
-                # Extract text using Tesseract
-                raw_text = pytesseract.image_to_string(processed_image, config=self.custom_config)
+                # Try multiple OCR configurations for better accuracy
+                raw_text = self._extract_text_with_multiple_configs(processed_image)
             
             # Enhance text using LLM if available
             if self.use_llm and self.llm_enhancer and raw_text.strip():
@@ -174,6 +178,54 @@ class OCRProcessor:
         except Exception as e:
             st.error(f"Error extracting text: {str(e)}")
             return ""
+    
+    def _extract_text_with_multiple_configs(self, image):
+        """
+        Extract text using multiple OCR configurations for better accuracy.
+        
+        Args:
+            image: Preprocessed image
+            
+        Returns:
+            Best extracted text
+        """
+        configs = [
+            r'--oem 3 --psm 6',  # Uniform block of text
+            r'--oem 3 --psm 3',  # Fully automatic page segmentation
+            r'--oem 3 --psm 4',  # Assume a single column of text
+            r'--oem 3 --psm 8',  # Single word
+            r'--oem 3 --psm 11'  # Sparse text with OSD
+        ]
+        
+        best_text = ""
+        best_confidence = 0
+        
+        for config in configs:
+            try:
+                # Extract text with confidence scores
+                data = pytesseract.image_to_data(image, config=config, output_type=pytesseract.Output.DICT)
+                
+                # Calculate average confidence
+                confidences = [int(conf) for conf in data['conf'] if int(conf) > 0]
+                avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+                
+                # Extract text
+                text = pytesseract.image_to_string(image, config=config)
+                
+                # Choose the result with highest confidence
+                if avg_confidence > best_confidence and text.strip():
+                    best_confidence = avg_confidence
+                    best_text = text
+                    
+            except Exception as e:
+                st.warning(f"OCR config failed: {str(e)}")
+                continue
+        
+        # If no good result found, use default config
+        if not best_text.strip():
+            best_text = pytesseract.image_to_string(image, config=self.custom_config)
+        
+        return best_text
     
     def create_pdf(self, text, output_path):
         """
