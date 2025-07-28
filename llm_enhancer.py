@@ -25,10 +25,21 @@ class LLMEnhancer:
             raise ValueError("OpenRouter API key is required. Set OPENROUTER_API_KEY environment variable.")
         
         # Configure OpenAI client for OpenRouter
-        self.client = openai.OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=self.api_key,
-        )
+        try:
+            self.client = openai.OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=self.api_key,
+            )
+        except TypeError as e:
+            # Handle version compatibility issues
+            if "proxies" in str(e):
+                # Try without any extra arguments
+                self.client = openai.OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=self.api_key,
+                )
+            else:
+                raise e
         
         # DeepSeek model identifier
         self.model = "deepseek/deepseek-chat-v3-0324:free"
