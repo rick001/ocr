@@ -18,7 +18,7 @@ from llm_enhancer import LLMEnhancer
 class OCRProcessor:
     def __init__(self, use_llm: bool = True):
         """Initialize the OCR processor with Tesseract configuration."""
-        # Configure Tesseract for better OCR results with multiple PSM modes
+        # Configure Tesseract for better OCR results focused on document content
         self.custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?@#$%&*()[]{}:;"\'<>/|\\+=_-~` '
         
         # Initialize LLM enhancer if requested
@@ -34,7 +34,7 @@ class OCRProcessor:
         
     def preprocess_image(self, image):
         """
-        Preprocess the image to improve OCR accuracy.
+        Preprocess the image to improve OCR accuracy and focus on document content.
         
         Args:
             image: PIL Image or numpy array
@@ -50,7 +50,7 @@ class OCRProcessor:
             gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         else:
             gray = image
-            
+        
         # Apply noise reduction
         denoised = cv2.fastNlMeansDenoising(gray)
         
@@ -65,7 +65,78 @@ class OCRProcessor:
         kernel_vertical = np.ones((2, 1), np.uint8)
         cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel_vertical)
         
+        # Focus on document content by removing UI elements
+        cleaned = self._remove_ui_elements(cleaned)
+        
         return cleaned
+    
+    def _remove_ui_elements(self, image):
+        """
+        Remove UI elements like sidebars, headers, and navigation areas.
+        
+        Args:
+            image: Binary image
+            
+        Returns:
+            Image with UI elements removed
+        """
+        # Get image dimensions
+        height, width = image.shape
+        
+        # Define regions to potentially remove (UI elements typically appear in these areas)
+        # Top header area (usually contains navigation, buttons, etc.)
+        top_crop_height = int(height * 0.15)  # Remove top 15%
+        
+        # Sidebar areas (left and right)
+        left_crop_width = int(width * 0.2)   # Remove left 20%
+        right_crop_width = int(width * 0.1)  # Remove right 10%
+        
+        # Bottom footer area
+        bottom_crop_height = int(height * 0.1)  # Remove bottom 10%
+        
+        # Crop to focus on main content area
+        cropped = image[top_crop_height:height-bottom_crop_height, 
+                       left_crop_width:width-right_crop_width]
+        
+        # If the cropped area is too small, use the original
+        if cropped.shape[0] < height * 0.5 or cropped.shape[1] < width * 0.5:
+            return image
+        
+        return cropped
+    
+    def _detect_document_region(self, image):
+        """
+        Detect the main document region using contour detection.
+        
+        Args:
+            image: Binary image
+            
+        Returns:
+            Cropped image focusing on document content
+        """
+        # Find contours in the image
+        contours, _ = cv2.findContours(image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if not contours:
+            return image
+        
+        # Find the largest contour (likely the main document area)
+        largest_contour = max(contours, key=cv2.contourArea)
+        
+        # Get bounding rectangle
+        x, y, w, h = cv2.boundingRect(largest_contour)
+        
+        # Add some padding around the detected region
+        padding = 20
+        x = max(0, x - padding)
+        y = max(0, y - padding)
+        w = min(image.shape[1] - x, w + 2 * padding)
+        h = min(image.shape[0] - y, h + 2 * padding)
+        
+        # Crop to the detected document region
+        cropped = image[y:y+h, x:x+w]
+        
+        return cropped
     
     def is_pdf_image_based(self, pdf_path):
         """
@@ -182,6 +253,7 @@ class OCRProcessor:
     def _extract_text_with_multiple_configs(self, image):
         """
         Extract text using multiple OCR configurations for better accuracy.
+        Focused on document content extraction.
         
         Args:
             image: Preprocessed image
@@ -189,12 +261,13 @@ class OCRProcessor:
         Returns:
             Best extracted text
         """
+        # Configurations optimized for document content
         configs = [
-            r'--oem 3 --psm 6',  # Uniform block of text
-            r'--oem 3 --psm 3',  # Fully automatic page segmentation
-            r'--oem 3 --psm 4',  # Assume a single column of text
-            r'--oem 3 --psm 8',  # Single word
-            r'--oem 3 --psm 11'  # Sparse text with OSD
+            r'--oem 3 --psm 6',   # Uniform block of text (best for documents)
+            r'--oem 3 --psm 3',   # Fully automatic page segmentation
+            r'--oem 3 --psm 4',   # Assume a single column of text
+            r'--oem 3 --psm 1',   # Automatic page segmentation with OSD
+            r'--oem 3 --psm 12'   # Sparse text with OSD
         ]
         
         best_text = ""
@@ -212,10 +285,15 @@ class OCRProcessor:
                 # Extract text
                 text = pytesseract.image_to_string(image, config=config)
                 
-                # Choose the result with highest confidence
-                if avg_confidence > best_confidence and text.strip():
+                # Clean up the text to focus on document content
+                cleaned_text = self._clean_extracted_text(text)
+                
+                # Choose the result with highest confidence and good content
+                if (avg_confidence > best_confidence and 
+                    cleaned_text.strip() and 
+                    len(cleaned_text.strip()) > len(best_text.strip())):
                     best_confidence = avg_confidence
-                    best_text = text
+                    best_text = cleaned_text
                     
             except Exception as e:
                 st.warning(f"OCR config failed: {str(e)}")
@@ -223,9 +301,128 @@ class OCRProcessor:
         
         # If no good result found, use default config
         if not best_text.strip():
-            best_text = pytesseract.image_to_string(image, config=self.custom_config)
+            text = pytesseract.image_to_string(image, config=self.custom_config)
+            best_text = self._clean_extracted_text(text)
         
         return best_text
+    
+    def _clean_extracted_text(self, text):
+        """
+        Clean extracted text to focus on document content.
+        
+        Args:
+            text: Raw extracted text
+            
+        Returns:
+            Cleaned text focused on document content
+        """
+        if not text:
+            return text
+        
+        lines = text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            
+            # Skip lines that are likely UI elements
+            if self._is_ui_element(line):
+                continue
+            
+            # Skip very short lines that might be noise
+            if len(line) < 3:
+                continue
+            
+            # Skip lines that are mostly special characters
+            if self._is_noise_line(line):
+                continue
+            
+            cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines)
+    
+    def _is_ui_element(self, line):
+        """
+        Check if a line is likely a UI element.
+        
+        Args:
+            line: Text line to check
+            
+        Returns:
+            True if line appears to be a UI element
+        """
+        line_lower = line.lower()
+        
+        # Common UI element indicators
+        ui_indicators = [
+            'file', 'edit', 'view', 'tools', 'help',  # Menu items
+            'share', 'comment', 'star', 'request',     # Google Docs buttons
+            'document tabs', 'page', 'of',             # Navigation
+            'search', 'find', 'replace',               # Search tools
+            'zoom', 'fit', 'actual',                   # Zoom controls
+            'undo', 'redo', 'copy', 'paste',           # Edit tools
+            'bold', 'italic', 'underline',             # Formatting
+            'align', 'left', 'center', 'right',        # Alignment
+            'font', 'size', 'color',                   # Text formatting
+            'insert', 'table', 'image', 'link',        # Insert menu
+            'format', 'paragraph', 'list',             # Format menu
+            'tools', 'spelling', 'grammar',            # Tools menu
+            'add-ons', 'extensions',                   # Add-ons
+            'account', 'profile', 'settings',          # Account/settings
+            'save', 'download', 'print',               # File operations
+            'new', 'open', 'close',                    # File menu
+            'recent', 'starred', 'shared',             # File organization
+        ]
+        
+        # Check if line contains UI indicators
+        for indicator in ui_indicators:
+            if indicator in line_lower:
+                return True
+        
+        # Check for patterns typical of UI elements
+        ui_patterns = [
+            r'^\d+$',                    # Just numbers (page numbers)
+            r'^[A-Z\s]+$',              # All caps (menu items)
+            r'^[^\w\s]+$',              # Only special characters
+            r'^\s*[•·]\s*$',            # Just bullet points
+            r'^\s*[-_=]+\s*$',          # Just separators
+        ]
+        
+        import re
+        for pattern in ui_patterns:
+            if re.match(pattern, line):
+                return True
+        
+        return False
+    
+    def _is_noise_line(self, line):
+        """
+        Check if a line is noise (not meaningful content).
+        
+        Args:
+            line: Text line to check
+            
+        Returns:
+            True if line appears to be noise
+        """
+        if not line:
+            return True
+        
+        # Count different character types
+        letters = sum(1 for c in line if c.isalpha())
+        digits = sum(1 for c in line if c.isdigit())
+        spaces = sum(1 for c in line if c.isspace())
+        special = len(line) - letters - digits - spaces
+        
+        # If mostly special characters, it's likely noise
+        if special > len(line) * 0.7:
+            return True
+        
+        # If very short and mostly numbers/special chars
+        if len(line) < 5 and (digits + special) > letters:
+            return True
+        
+        return False
     
     def create_pdf(self, text, output_path):
         """
