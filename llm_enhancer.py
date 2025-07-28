@@ -179,7 +179,7 @@ class LLMEnhancer:
             return text
     
     def _clean_enhanced_text(self, text: str) -> str:
-        """Clean up enhanced text to remove prompt artifacts"""
+        """Clean up enhanced text to remove prompt artifacts and UI elements"""
         # Remove common prompt artifacts
         artifacts_to_remove = [
             "ENHANCED TEXT:",
@@ -187,7 +187,9 @@ class LLMEnhancer:
             "RAW OCR TEXT:",
             "ENHANCEMENT RULES:",
             "Return ONLY the enhanced text",
-            "Do not include any explanations"
+            "Do not include any explanations",
+            "FOCUS ONLY on document content",
+            "Remove any lines that appear to be interface elements"
         ]
         
         cleaned_text = text
@@ -197,14 +199,63 @@ class LLMEnhancer:
         # Remove any lines that are just instructions
         lines = cleaned_text.split('\n')
         cleaned_lines = []
+        
         for line in lines:
             line = line.strip()
             if line and not any(instruction in line.lower() for instruction in [
-                'enhancement rules', 'raw ocr text', 'return only', 'do not include'
+                'enhancement rules', 'raw ocr text', 'return only', 'do not include',
+                'focus only', 'remove any lines', 'enhanced text'
             ]):
-                cleaned_lines.append(line)
+                # Additional check for UI elements
+                if not self._is_ui_element(line):
+                    cleaned_lines.append(line)
         
         return '\n'.join(cleaned_lines).strip()
+    
+    def _is_ui_element(self, line: str) -> bool:
+        """Check if a line is likely a UI element"""
+        line_lower = line.lower()
+        
+        # Common UI element indicators
+        ui_indicators = [
+            'file', 'edit', 'view', 'tools', 'help',
+            'share', 'comment', 'star', 'request',
+            'document tabs', 'page', 'of',
+            'search', 'find', 'replace',
+            'zoom', 'fit', 'actual',
+            'undo', 'redo', 'copy', 'paste',
+            'bold', 'italic', 'underline',
+            'align', 'left', 'center', 'right',
+            'font', 'size', 'color',
+            'insert', 'table', 'image', 'link',
+            'format', 'paragraph', 'list',
+            'add-ons', 'extensions',
+            'account', 'profile', 'settings',
+            'save', 'download', 'print',
+            'new', 'open', 'close',
+            'recent', 'starred', 'shared'
+        ]
+        
+        # Check if line contains UI indicators
+        for indicator in ui_indicators:
+            if indicator in line_lower:
+                return True
+        
+        # Check for patterns typical of UI elements
+        import re
+        ui_patterns = [
+            r'^\d+$',                    # Just numbers (page numbers)
+            r'^[A-Z\s]+$',              # All caps (menu items)
+            r'^[^\w\s]+$',              # Only special characters
+            r'^\s*[•·]\s*$',            # Just bullet points
+            r'^\s*[-_=]+\s*$',          # Just separators
+        ]
+        
+        for pattern in ui_patterns:
+            if re.match(pattern, line):
+                return True
+        
+        return False
     
     def enhance_ocr_text(self, raw_text: str, context: str = "document") -> str:
         """
@@ -267,7 +318,7 @@ class LLMEnhancer:
     
     def _create_enhancement_prompt(self, raw_text: str, context: str) -> str:
         """
-        Create a prompt for text enhancement.
+        Create a prompt for text enhancement focused on document content.
         
         Args:
             raw_text: Raw OCR text
@@ -276,7 +327,7 @@ class LLMEnhancer:
         Returns:
             Formatted prompt for LLM
         """
-        return f"""You are an expert OCR text enhancer. Your task is to improve the readability of OCR text while preserving the EXACT original structure and content.
+        return f"""You are an expert OCR text enhancer focused on document content. Your task is to improve the readability of OCR text while preserving the EXACT original structure and content, focusing ONLY on the actual document content.
 
 RAW OCR TEXT:
 {raw_text}
@@ -292,8 +343,11 @@ ENHANCEMENT RULES:
 8. Keep ALL email addresses, URLs, and technical terms exactly as they appear
 9. Do NOT change any names, dates, or specific details
 10. Do NOT add explanations or markdown formatting
+11. FOCUS ONLY on document content - ignore UI elements, navigation, buttons, menus
+12. Remove any lines that appear to be interface elements (File, Edit, View, Share, etc.)
+13. Keep only meaningful document content
 
-Return ONLY the enhanced text with the exact same structure as the original. Do not include any explanations or the word "ENHANCED:".
+Return ONLY the enhanced document content with the exact same structure as the original. Do not include any explanations, UI elements, or the word "ENHANCED:".
 
 ENHANCED TEXT:"""
     
