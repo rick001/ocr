@@ -24,37 +24,66 @@ class LLMEnhancer:
         if not self.api_key:
             raise ValueError("OpenRouter API key is required. Set OPENROUTER_API_KEY environment variable.")
         
-        # Configure OpenAI client for OpenRouter
+        print(f"Debug: API key found: {'Yes' if self.api_key else 'No'}")
+        print(f"Debug: API key length: {len(self.api_key) if self.api_key else 0}")
+        
+        # Configure OpenAI client for OpenRouter with multiple fallback strategies
+        self.client = None
+        
+        # Strategy 1: Try with minimal parameters
         try:
-            # First attempt: standard initialization
-            self.client = openai.OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=self.api_key,
-            )
-        except TypeError as e:
-            # Handle version compatibility issues
-            if "proxies" in str(e):
+            print("Debug: Trying Strategy 1 - Minimal initialization")
+            self.client = openai.OpenAI(api_key=self.api_key)
+            self.client.base_url = "https://openrouter.ai/api/v1"
+            print("Debug: Strategy 1 successful")
+        except Exception as e1:
+            print(f"Debug: Strategy 1 failed: {str(e1)}")
+            
+            # Strategy 2: Try with base_url parameter
+            try:
+                print("Debug: Trying Strategy 2 - With base_url")
+                self.client = openai.OpenAI(
+                    api_key=self.api_key,
+                    base_url="https://openrouter.ai/api/v1"
+                )
+                print("Debug: Strategy 2 successful")
+            except Exception as e2:
+                print(f"Debug: Strategy 2 failed: {str(e2)}")
+                
+                # Strategy 3: Try with different openai version approach
                 try:
-                    # Second attempt: minimal initialization
+                    print("Debug: Trying Strategy 3 - Alternative approach")
+                    import openai
+                    # Force reload openai module
+                    import importlib
+                    importlib.reload(openai)
+                    
                     self.client = openai.OpenAI(
-                        base_url="https://openrouter.ai/api/v1",
                         api_key=self.api_key,
+                        base_url="https://openrouter.ai/api/v1"
                     )
-                except Exception as e2:
-                    # Third attempt: most basic initialization
-                    self.client = openai.OpenAI(
-                        api_key=self.api_key,
-                    )
-                    # Set base URL after initialization
-                    self.client.base_url = "https://openrouter.ai/api/v1"
-            else:
-                raise e
-        except Exception as e:
-            print(f"OpenAI client initialization failed: {str(e)}")
-            raise ValueError(f"Failed to initialize OpenAI client: {str(e)}")
+                    print("Debug: Strategy 3 successful")
+                except Exception as e3:
+                    print(f"Debug: Strategy 3 failed: {str(e3)}")
+                    
+                    # Strategy 4: Last resort - try without base_url and set it later
+                    try:
+                        print("Debug: Trying Strategy 4 - Last resort")
+                        self.client = openai.OpenAI(api_key=self.api_key)
+                        # Try to set base_url as attribute
+                        if hasattr(self.client, 'base_url'):
+                            self.client.base_url = "https://openrouter.ai/api/v1"
+                        print("Debug: Strategy 4 successful")
+                    except Exception as e4:
+                        print(f"Debug: All strategies failed. Last error: {str(e4)}")
+                        raise ValueError(f"Failed to initialize OpenAI client after multiple attempts. Last error: {str(e4)}")
+        
+        if not self.client:
+            raise ValueError("OpenAI client initialization failed")
         
         # DeepSeek model identifier
         self.model = "deepseek/deepseek-chat-v3-0324:free"
+        print("Debug: LLM Enhancer initialized successfully")
     
     def enhance_ocr_text(self, raw_text: str, context: str = "document") -> str:
         """
