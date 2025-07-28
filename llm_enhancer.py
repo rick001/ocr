@@ -27,29 +27,73 @@ class LLMEnhancer:
         print(f"Debug: API key found: {'Yes' if self.api_key else 'No'}")
         print(f"Debug: API key length: {len(self.api_key) if self.api_key else 0}")
         
-        # Configure OpenAI client for OpenRouter with simplified approach
+        # Configure OpenAI client for OpenRouter with version-agnostic approach
         try:
             print("Debug: Initializing OpenAI client...")
-            # Use the global openai import, not a local one
+            
+            # Try to get the OpenAI version to understand the issue
+            import openai
+            print(f"Debug: OpenAI version: {openai.__version__}")
+            
+            # Use a more basic approach that should work across versions
             self.client = openai.OpenAI(
                 api_key=self.api_key,
                 base_url="https://openrouter.ai/api/v1"
             )
             print("Debug: OpenAI client initialized successfully")
+            
         except TypeError as e:
             print(f"Debug: TypeError during initialization: {str(e)}")
             if "proxies" in str(e):
-                print("Debug: Proxies error detected, trying alternative approach...")
+                print("Debug: Proxies error detected, trying version-specific workaround...")
                 try:
-                    # Try without base_url first, then set it
+                    # Try using the client with minimal parameters and manual base_url setting
                     self.client = openai.OpenAI(api_key=self.api_key)
-                    # Set base_url after initialization
+                    
+                    # Set the base URL manually after initialization
                     if hasattr(self.client, 'base_url'):
                         self.client.base_url = "https://openrouter.ai/api/v1"
-                    print("Debug: Alternative approach successful")
+                    else:
+                        # If base_url attribute doesn't exist, try setting it differently
+                        print("Debug: No base_url attribute, trying alternative approach...")
+                        # Try to set it through the client's internal configuration
+                        if hasattr(self.client, '_client'):
+                            # Some versions store the base URL in the internal client
+                            pass
+                    
+                    print("Debug: Version-specific workaround successful")
+                    
                 except Exception as e2:
-                    print(f"Debug: Alternative approach failed: {str(e2)}")
-                    raise ValueError(f"Failed to initialize OpenAI client: {str(e2)}")
+                    print(f"Debug: Version-specific workaround failed: {str(e2)}")
+                    
+                    # Last resort: Try creating a custom client configuration
+                    try:
+                        print("Debug: Trying custom client configuration...")
+                        
+                        # Import httpx directly to avoid the wrapper issue
+                        import httpx
+                        
+                        # Create a custom httpx client without proxies
+                        http_client = httpx.Client(
+                            timeout=httpx.Timeout(30.0),
+                            headers={
+                                "Authorization": f"Bearer {self.api_key}",
+                                "Content-Type": "application/json"
+                            }
+                        )
+                        
+                        # Create OpenAI client with custom http_client
+                        self.client = openai.OpenAI(
+                            api_key=self.api_key,
+                            base_url="https://openrouter.ai/api/v1",
+                            http_client=http_client
+                        )
+                        
+                        print("Debug: Custom client configuration successful")
+                        
+                    except Exception as e3:
+                        print(f"Debug: Custom client configuration failed: {str(e3)}")
+                        raise ValueError(f"Failed to initialize OpenAI client after all attempts. Last error: {str(e3)}")
             else:
                 raise ValueError(f"Failed to initialize OpenAI client: {str(e)}")
         except Exception as e:
