@@ -26,6 +26,7 @@ class LLMEnhancer:
         
         # Configure OpenAI client for OpenRouter
         try:
+            # First attempt: standard initialization
             self.client = openai.OpenAI(
                 base_url="https://openrouter.ai/api/v1",
                 api_key=self.api_key,
@@ -33,13 +34,24 @@ class LLMEnhancer:
         except TypeError as e:
             # Handle version compatibility issues
             if "proxies" in str(e):
-                # Try without any extra arguments
-                self.client = openai.OpenAI(
-                    base_url="https://openrouter.ai/api/v1",
-                    api_key=self.api_key,
-                )
+                try:
+                    # Second attempt: minimal initialization
+                    self.client = openai.OpenAI(
+                        base_url="https://openrouter.ai/api/v1",
+                        api_key=self.api_key,
+                    )
+                except Exception as e2:
+                    # Third attempt: most basic initialization
+                    self.client = openai.OpenAI(
+                        api_key=self.api_key,
+                    )
+                    # Set base URL after initialization
+                    self.client.base_url = "https://openrouter.ai/api/v1"
             else:
                 raise e
+        except Exception as e:
+            print(f"OpenAI client initialization failed: {str(e)}")
+            raise ValueError(f"Failed to initialize OpenAI client: {str(e)}")
         
         # DeepSeek model identifier
         self.model = "deepseek/deepseek-chat-v3-0324:free"
