@@ -167,12 +167,44 @@ class LLMEnhancer:
             )
             
             enhanced_text = response.choices[0].message.content.strip()
+            
+            # Clean up any prompt artifacts
+            enhanced_text = self._clean_enhanced_text(enhanced_text)
+            
             return enhanced_text
             
         except Exception as e:
             print(f"LLM enhancement failed: {str(e)}")
             # Return original text if LLM fails
             return text
+    
+    def _clean_enhanced_text(self, text: str) -> str:
+        """Clean up enhanced text to remove prompt artifacts"""
+        # Remove common prompt artifacts
+        artifacts_to_remove = [
+            "ENHANCED TEXT:",
+            "ENHANCED:",
+            "RAW OCR TEXT:",
+            "ENHANCEMENT RULES:",
+            "Return ONLY the enhanced text",
+            "Do not include any explanations"
+        ]
+        
+        cleaned_text = text
+        for artifact in artifacts_to_remove:
+            cleaned_text = cleaned_text.replace(artifact, "").strip()
+        
+        # Remove any lines that are just instructions
+        lines = cleaned_text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            if line and not any(instruction in line.lower() for instruction in [
+                'enhancement rules', 'raw ocr text', 'return only', 'do not include'
+            ]):
+                cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines).strip()
     
     def enhance_ocr_text(self, raw_text: str, context: str = "document") -> str:
         """
@@ -244,8 +276,7 @@ class LLMEnhancer:
         Returns:
             Formatted prompt for LLM
         """
-        return f"""
-You are an expert OCR text enhancer. Your task is to improve the readability of OCR text while preserving the EXACT original structure and content.
+        return f"""You are an expert OCR text enhancer. Your task is to improve the readability of OCR text while preserving the EXACT original structure and content.
 
 RAW OCR TEXT:
 {raw_text}
@@ -262,8 +293,9 @@ ENHANCEMENT RULES:
 9. Do NOT change any names, dates, or specific details
 10. Do NOT add explanations or markdown formatting
 
-Return ONLY the enhanced text with the exact same structure as the original.
-"""
+Return ONLY the enhanced text with the exact same structure as the original. Do not include any explanations or the word "ENHANCED:".
+
+ENHANCED TEXT:"""
     
     def extract_structured_data(self, text: str, data_type: str = "general") -> Dict[str, Any]:
         """
