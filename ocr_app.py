@@ -19,7 +19,7 @@ class OCRProcessor:
     def __init__(self, use_llm: bool = True):
         """Initialize the OCR processor with Tesseract configuration."""
         # Configure Tesseract for better OCR results focused on document content
-        self.custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?@#$%&*()[]{}:;"\'<>/|\\+=_-~` '
+        self.custom_config = r'--oem 3 --psm 6'
         
         # Initialize LLM enhancer if requested
         self.use_llm = use_llm
@@ -179,23 +179,69 @@ class OCRProcessor:
             Extracted text as string
         """
         try:
-            # Convert PDF pages to images
-            images = convert_from_path(pdf_path, dpi=300)
-            
-            all_text = []
-            
-            for i, image in enumerate(images):
-                # Preprocess the image
-                processed_image = self.preprocess_image(image)
+            # Try using pdf2image first (requires Poppler)
+            try:
+                # Convert PDF pages to images
+                images = convert_from_path(pdf_path, dpi=300)
                 
-                # Extract text from the page
-                page_text = pytesseract.image_to_string(processed_image, config=self.custom_config)
+                all_text = []
                 
-                if page_text.strip():
-                    all_text.append(f"--- Page {i+1} ---\n{page_text.strip()}")
-            
-            return "\n\n".join(all_text)
-            
+                for i, image in enumerate(images):
+                    # Preprocess the image
+                    processed_image = self.preprocess_image(image)
+                    
+                    # Extract text from the page
+                    page_text = pytesseract.image_to_string(processed_image, config=self.custom_config)
+                    
+                    if page_text.strip():
+                        all_text.append(f"--- Page {i+1} ---\n{page_text.strip()}")
+                
+                result = "\n\n".join(all_text)
+                return result
+                
+            except Exception as e:
+                st.warning(f"pdf2image failed: {str(e)}. Trying PyMuPDF...")
+                
+                # Fallback: Try using PyMuPDF if available
+                try:
+                    import fitz  # PyMuPDF
+                    
+                    doc = fitz.open(pdf_path)
+                    all_text = []
+                    
+                    for page_num in range(len(doc)):
+                        page = doc.load_page(page_num)
+                        
+                        # Convert page to image
+                        mat = fitz.Matrix(2, 2)  # 2x zoom for better quality
+                        pix = page.get_pixmap(matrix=mat)
+                        
+                        # Convert to PIL Image
+                        img_data = pix.tobytes("ppm")
+                        from PIL import Image
+                        import io
+                        image = Image.open(io.BytesIO(img_data))
+                        
+                        # Preprocess the image
+                        processed_image = self.preprocess_image(image)
+                        
+                        # Extract text from the page
+                        page_text = pytesseract.image_to_string(processed_image, config=self.custom_config)
+                        
+                        if page_text.strip():
+                            all_text.append(f"--- Page {page_num+1} ---\n{page_text.strip()}")
+                    
+                    doc.close()
+                    result = "\n\n".join(all_text)
+                    return result
+                    
+                except ImportError:
+                    st.error("PyMuPDF not available. Please install it with: pip install PyMuPDF")
+                    return ""
+                except Exception as e2:
+                    st.error(f"PyMuPDF processing failed: {str(e2)}")
+                    return ""
+                
         except Exception as e:
             st.error(f"Error extracting text from PDF: {str(e)}")
             return ""
