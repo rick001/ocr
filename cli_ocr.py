@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Command-line OCR tool for converting images and PDFs to readable PDFs.
+Command-line OCR tool for converting images and PDFs to readable PDFs with AI enhancement.
 Usage: python cli_ocr.py <input_file> [output_pdf]
 """
 
@@ -13,13 +13,14 @@ from ocr_app import OCRProcessor
 def main():
     """Command-line interface for the OCR application."""
     parser = argparse.ArgumentParser(
-        description="Convert images and PDFs to readable PDFs using OCR",
+        description="Convert images and PDFs to readable PDFs using OCR + AI enhancement",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python cli_ocr.py document.png
   python cli_ocr.py scanned_document.pdf
-  python cli_ocr.py image.jpg output.pdf
+  python cli_ocr.py image.jpg output.pdf --ai
+  python cli_ocr.py receipt.png --ai --doc-type receipt
   python cli_ocr.py --help
         """
     )
@@ -33,6 +34,19 @@ Examples:
         'output_pdf',
         nargs='?',
         help='Path for the output PDF file (optional)'
+    )
+    
+    parser.add_argument(
+        '--ai', '--enhance',
+        action='store_true',
+        help='Enable AI enhancement using DeepSeek model'
+    )
+    
+    parser.add_argument(
+        '--doc-type',
+        choices=['general', 'receipt', 'invoice', 'form', 'letter'],
+        default='general',
+        help='Document type for better AI processing (default: general)'
     )
     
     parser.add_argument(
@@ -67,9 +81,20 @@ Examples:
         print(f"📁 Input file: {args.input_file}")
         print(f"📄 Output PDF: {output_path}")
         print(f"🔍 File type: {input_path.suffix.upper()}")
+        print(f"🤖 AI Enhancement: {'Enabled' if args.ai else 'Disabled'}")
+        print(f"📋 Document type: {args.doc_type}")
     
     # Initialize OCR processor
-    processor = OCRProcessor()
+    try:
+        processor = OCRProcessor(use_llm=args.ai)
+    except Exception as e:
+        if args.ai:
+            print(f"❌ AI enhancement error: {str(e)}")
+            print("💡 Make sure OPENROUTER_API_KEY is set in environment variables")
+            print("   Get your API key from: https://openrouter.ai/keys")
+            sys.exit(1)
+        else:
+            processor = OCRProcessor(use_llm=False)
     
     print("🔄 Processing file...")
     
@@ -84,6 +109,19 @@ Examples:
             # Show file size
             file_size = os.path.getsize(pdf_path)
             print(f"📊 File size: {file_size:,} bytes")
+            
+            # Extract structured data if AI is enabled
+            if args.ai and processor.llm_enhancer:
+                print("🔍 Extracting structured data...")
+                text = processor.extract_text(args.input_file)
+                if text:
+                    structured_data = processor.extract_structured_data(text, args.doc_type)
+                    if structured_data and "error" not in structured_data:
+                        print("📋 Structured data extracted:")
+                        import json
+                        print(json.dumps(structured_data, indent=2))
+                    else:
+                        print("⚠️ Could not extract structured data")
             
         else:
             print("❌ Failed to create PDF. Please check the input file.")

@@ -1,6 +1,6 @@
-# 📄 Image/PDF to PDF OCR Converter
+# 🤖 AI-Enhanced OCR Converter
 
-A powerful application that converts images and image-based PDFs into readable PDF documents using Optical Character Recognition (OCR) technology.
+A powerful application that converts images and image-based PDFs into readable PDF documents using OCR technology enhanced with AI for better text interpretation and correction.
 
 ## ✨ Features
 
@@ -8,6 +8,8 @@ A powerful application that converts images and image-based PDFs into readable P
 - **Command Line**: Simple CLI tool for batch processing
 - **Multiple Formats**: Supports PNG, JPG, JPEG, BMP, TIFF, PDF
 - **PDF Processing**: Handles both image-based PDFs and text-based PDFs
+- **AI Enhancement**: DeepSeek model improves OCR accuracy and text quality
+- **Structured Data Extraction**: AI extracts key information from documents
 - **Advanced Processing**: Image preprocessing for better OCR accuracy
 - **Clean PDF Output**: Properly formatted, readable PDF documents
 - **Cross-platform**: Works on Windows, macOS, and Linux
@@ -19,6 +21,7 @@ A powerful application that converts images and image-based PDFs into readable P
 1. **Python 3.7+** installed on your system
 2. **Tesseract OCR** engine installed
 3. **Poppler-utils** (for PDF processing on Linux/macOS)
+4. **OpenRouter API Key** (for AI enhancement - optional)
 
 #### Installing Tesseract OCR
 
@@ -58,6 +61,18 @@ brew install poppler
 sudo apt-get install poppler-utils
 ```
 
+#### Setting up AI Enhancement
+
+1. **Get an OpenRouter API key** from [https://openrouter.ai/keys](https://openrouter.ai/keys)
+2. **Set the environment variable**:
+   ```bash
+   export OPENROUTER_API_KEY=your_api_key_here
+   ```
+   Or create a `.env` file:
+   ```
+   OPENROUTER_API_KEY=your_api_key_here
+   ```
+
 ### Installation
 
 1. **Clone or download this repository**
@@ -76,9 +91,11 @@ streamlit run ocr_app.py
 ```
 
 Then open your browser to `http://localhost:8501` and:
-1. Upload an image or PDF containing text
-2. Click "Convert to PDF"
-3. Download the generated PDF
+1. Configure AI enhancement in the sidebar
+2. Upload an image or PDF containing text
+3. Click "Convert to PDF"
+4. Download the generated PDF
+5. View AI analysis for structured data
 
 ### Command Line Interface
 
@@ -87,19 +104,24 @@ Convert a single image:
 python cli_ocr.py document.png
 ```
 
-Convert a PDF:
+Convert with AI enhancement:
 ```bash
-python cli_ocr.py scanned_document.pdf
+python cli_ocr.py scanned_document.pdf --ai
+```
+
+Specify document type for better AI processing:
+```bash
+python cli_ocr.py receipt.png --ai --doc-type receipt
 ```
 
 Specify output filename:
 ```bash
-python cli_ocr.py image.jpg output.pdf
+python cli_ocr.py image.jpg output.pdf --ai
 ```
 
 Enable verbose output:
 ```bash
-python cli_ocr.py document.png --verbose
+python cli_ocr.py document.png --verbose --ai
 ```
 
 Get help:
@@ -144,7 +166,18 @@ The application consists of several key components:
    - Optimized configuration for text extraction
    - Error handling and validation
 
-5. **PDF Generation** (`OCRProcessor.create_pdf()`):
+5. **AI Enhancement** (`LLMEnhancer.enhance_ocr_text()`):
+   - DeepSeek Chat v3 model via OpenRouter.ai
+   - Fixes OCR errors and misinterpretations
+   - Improves text formatting and readability
+   - Context-aware processing based on document type
+
+6. **Structured Data Extraction** (`LLMEnhancer.extract_structured_data()`):
+   - Extracts key information from documents
+   - Supports receipts, invoices, forms, and general documents
+   - Returns structured JSON data
+
+7. **PDF Generation** (`OCRProcessor.create_pdf()`):
    - ReportLab for PDF creation
    - Proper text formatting and styling
    - Paragraph separation and spacing
@@ -159,6 +192,9 @@ The application consists of several key components:
 - **numpy**: Numerical operations for image processing
 - **pdf2image**: PDF to image conversion
 - **PyPDF2**: PDF text extraction and analysis
+- **openai**: OpenAI client for API calls
+- **python-dotenv**: Environment variable management
+- **requests**: HTTP requests for API calls
 
 ## 📋 Supported Formats
 
@@ -168,6 +204,7 @@ The application consists of several key components:
 
 ### Output Format
 - PDF (readable, searchable text)
+- Structured JSON data (with AI enhancement)
 
 ## 🎯 Best Practices
 
@@ -193,6 +230,11 @@ For optimal OCR results:
    - Image-based PDFs are processed page by page
    - Text-based PDFs are extracted directly
 
+5. **AI Enhancement**:
+   - Set the correct document type for better AI processing
+   - Ensure your OpenRouter API key is configured
+   - AI enhancement works best with clear, readable text
+
 ## 🔧 Troubleshooting
 
 ### Common Issues
@@ -205,10 +247,16 @@ For optimal OCR results:
 - Install poppler-utils on your system
 - Windows users need to download and configure poppler manually
 
+**"OpenRouter API key not found" error:**
+- Set the OPENROUTER_API_KEY environment variable
+- Get your API key from [https://openrouter.ai/keys](https://openrouter.ai/keys)
+- The app will work without AI enhancement if no API key is provided
+
 **Poor OCR accuracy:**
 - Try preprocessing the image manually (increase contrast, remove noise)
 - Ensure the image has sufficient resolution
 - Check that text is clearly visible and well-spaced
+- Enable AI enhancement for better results
 
 **PDF generation fails:**
 - Check that the output directory is writable
@@ -221,6 +269,7 @@ For optimal OCR results:
 - Large images and multi-page PDFs may take longer to process
 - Consider resizing very large images before processing
 - PDF processing is more resource-intensive than image processing
+- AI enhancement adds processing time but improves quality significantly
 
 ## 📁 Project Structure
 
@@ -229,8 +278,10 @@ ocr/
 ├── ocr_app.py          # Main web application
 ├── cli_ocr.py          # Command-line interface
 ├── batch_ocr.py        # Batch processing tool
+├── llm_enhancer.py     # AI enhancement module
 ├── test_installation.py # Installation verification
 ├── requirements.txt     # Python dependencies
+├── env_example.txt      # Environment variables example
 └── README.md           # This file
 ```
 
@@ -250,7 +301,9 @@ This project is open source and available under the MIT License.
 - **ReportLab**: For professional PDF generation
 - **pdf2image**: For PDF to image conversion
 - **PyPDF2**: For PDF text analysis
+- **DeepSeek**: For AI-powered text enhancement
+- **OpenRouter**: For providing access to advanced AI models
 
 ---
 
-**Happy converting! 📄✨** 
+**Happy converting! 🤖📄✨** 

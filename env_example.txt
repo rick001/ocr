@@ -1,0 +1,7 @@
+# OpenRouter API Configuration
+# Get your API key from: https://openrouter.ai/keys
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+
+# Optional: Configure other settings
+# STREAMLIT_SERVER_PORT=8501
+# STREAMLIT_SERVER_ADDRESS=0.0.0.0 

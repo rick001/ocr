@@ -13,12 +13,24 @@ import tempfile
 from pathlib import Path
 from pdf2image import convert_from_path
 import PyPDF2
+from llm_enhancer import LLMEnhancer
 
 class OCRProcessor:
-    def __init__(self):
+    def __init__(self, use_llm: bool = True):
         """Initialize the OCR processor with Tesseract configuration."""
         # Configure Tesseract for better OCR results
         self.custom_config = r'--oem 3 --psm 6'
+        
+        # Initialize LLM enhancer if requested
+        self.use_llm = use_llm
+        self.llm_enhancer = None
+        if use_llm:
+            try:
+                self.llm_enhancer = LLMEnhancer()
+                st.success("✅ LLM enhancement enabled with DeepSeek model")
+            except Exception as e:
+                st.warning(f"⚠️ LLM enhancement disabled: {str(e)}")
+                self.use_llm = False
         
     def preprocess_image(self, image):
         """
@@ -130,7 +142,7 @@ class OCRProcessor:
             if file_path.suffix.lower() == '.pdf':
                 # Check if PDF is image-based
                 if self.is_pdf_image_based(str(file_path)):
-                    return self.extract_text_from_pdf(str(file_path))
+                    raw_text = self.extract_text_from_pdf(str(file_path))
                 else:
                     # PDF contains text, extract directly
                     with open(file_path, 'rb') as file:
@@ -140,7 +152,7 @@ class OCRProcessor:
                             text = page.extract_text()
                             if text.strip():
                                 text_parts.append(text.strip())
-                        return "\n\n".join(text_parts)
+                        raw_text = "\n\n".join(text_parts)
             else:
                 # Handle as image file
                 image = Image.open(file_path)
@@ -149,9 +161,15 @@ class OCRProcessor:
                 processed_image = self.preprocess_image(image)
                 
                 # Extract text using Tesseract
-                text = pytesseract.image_to_string(processed_image, config=self.custom_config)
-                
-                return text.strip()
+                raw_text = pytesseract.image_to_string(processed_image, config=self.custom_config)
+            
+            # Enhance text using LLM if available
+            if self.use_llm and self.llm_enhancer and raw_text.strip():
+                with st.spinner("🤖 Enhancing text with AI..."):
+                    enhanced_text = self.llm_enhancer.enhance_ocr_text(raw_text.strip())
+                    return enhanced_text
+            
+            return raw_text.strip()
             
         except Exception as e:
             st.error(f"Error extracting text: {str(e)}")
@@ -232,20 +250,64 @@ class OCRProcessor:
         pdf_path = self.create_pdf(text, output_path)
         
         return pdf_path
+    
+    def extract_structured_data(self, text, data_type="general"):
+        """
+        Extract structured data from text using LLM.
+        
+        Args:
+            text: Text to analyze
+            data_type: Type of data to extract
+            
+        Returns:
+            Dictionary with extracted structured data
+        """
+        if self.use_llm and self.llm_enhancer:
+            return self.llm_enhancer.extract_structured_data(text, data_type)
+        else:
+            return {
+                "extracted_text": text,
+                "confidence": "low",
+                "error": "LLM enhancement not available"
+            }
 
 def main():
     """Main function for the OCR application."""
     st.set_page_config(
-        page_title="Image/PDF to PDF OCR Converter",
-        page_icon="📄",
+        page_title="AI-Enhanced OCR Converter",
+        page_icon="🤖",
         layout="wide"
     )
     
-    st.title("📄 Image/PDF to PDF OCR Converter")
-    st.markdown("Convert images and image-based PDFs into readable PDF documents using OCR technology.")
+    st.title("🤖 AI-Enhanced OCR Converter")
+    st.markdown("Convert images and PDFs into readable documents using OCR + AI enhancement.")
+    
+    # Sidebar for configuration
+    with st.sidebar:
+        st.header("⚙️ Configuration")
+        
+        # LLM enhancement toggle
+        use_llm = st.checkbox("Enable AI Enhancement", value=True, 
+                             help="Use DeepSeek AI model to improve OCR results")
+        
+        # Document type selection
+        doc_type = st.selectbox(
+            "Document Type",
+            ["general", "receipt", "invoice", "form", "letter"],
+            help="Helps AI better understand and process the document"
+        )
+        
+        # Show API status
+        if use_llm:
+            try:
+                test_enhancer = LLMEnhancer()
+                st.success("✅ AI Enhancement Ready")
+            except Exception as e:
+                st.error(f"❌ AI Enhancement Error: {str(e)}")
+                st.info("💡 Set OPENROUTER_API_KEY environment variable")
     
     # Initialize OCR processor
-    processor = OCRProcessor()
+    processor = OCRProcessor(use_llm=use_llm)
     
     # File upload section
     st.header("📁 Upload File")
@@ -268,7 +330,7 @@ def main():
             st.image(image, caption=f"Uploaded Image: {file_name}", use_column_width=True)
         elif file_type == 'application/pdf':
             st.info(f"📄 PDF File: {file_name}")
-            st.write("The PDF will be processed to extract text using OCR.")
+            st.write("The PDF will be processed to extract text using OCR + AI enhancement.")
         
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file_name).suffix) as tmp_file:
@@ -294,6 +356,22 @@ def main():
                             mime="application/pdf"
                         )
                     
+                    # Show structured data extraction if LLM is available
+                    if use_llm and processor.llm_enhancer:
+                        st.subheader("🔍 AI Analysis")
+                        
+                        # Extract text for analysis
+                        text = processor.extract_text(temp_file_path)
+                        
+                        if text:
+                            # Extract structured data
+                            structured_data = processor.extract_structured_data(text, doc_type)
+                            
+                            if structured_data and "error" not in structured_data:
+                                st.json(structured_data)
+                            else:
+                                st.warning("Could not extract structured data")
+                    
                     # Clean up temporary files
                     try:
                         os.unlink(temp_file_path)
@@ -307,19 +385,16 @@ def main():
     st.header("ℹ️ Instructions")
     st.markdown("""
     1. **Upload an image or PDF** containing text that you want to convert to readable PDF
-    2. **Click 'Convert to PDF'** to process the file using OCR
-    3. **Download the PDF** with the extracted text in a readable format
+    2. **Configure AI enhancement** in the sidebar (requires OpenRouter API key)
+    3. **Click 'Convert to PDF'** to process the file using OCR + AI
+    4. **Download the PDF** with enhanced, readable text
+    5. **View AI analysis** for structured data extraction
     
-    **Supported file types:**
-    - **Images**: PNG, JPG, JPEG, BMP, TIFF
-    - **PDFs**: Image-based PDFs (scanned documents, etc.)
-    
-    **Tips for better results:**
-    - Use clear, high-resolution images
-    - Ensure good lighting and contrast
-    - Avoid blurry or distorted text
-    - Text should be clearly visible and well-spaced
-    - For PDFs, the app will automatically detect if it's image-based or text-based
+    **AI Enhancement Features:**
+    - Fixes OCR errors and misinterpretations
+    - Improves text formatting and readability
+    - Extracts structured data (receipts, invoices, etc.)
+    - Provides better text interpretation
     """)
     
     # Technical details
@@ -327,6 +402,7 @@ def main():
         st.markdown("""
         **Technologies used:**
         - **OCR Engine**: Tesseract (via pytesseract)
+        - **AI Enhancement**: DeepSeek Chat v3 via OpenRouter.ai
         - **Image Processing**: OpenCV and PIL
         - **PDF Processing**: pdf2image and PyPDF2
         - **PDF Generation**: ReportLab
@@ -337,8 +413,10 @@ def main():
         2. **PDF Processing**: Convert PDF pages to images (if image-based)
         3. **Image Preprocessing**: Grayscale conversion, noise reduction, thresholding
         4. **Text Extraction**: Using Tesseract OCR
-        5. **PDF Generation**: Create readable, searchable PDF
-        6. **Download**: Provide processed file for download
+        5. **AI Enhancement**: DeepSeek model improves text quality
+        6. **PDF Generation**: Create readable, searchable PDF
+        7. **Structured Data**: AI extracts key information
+        8. **Download**: Provide processed file for download
         """)
 
 if __name__ == "__main__":
